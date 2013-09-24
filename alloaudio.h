@@ -7,6 +7,9 @@ connection_data_t *jack_initialize (int num_chnls);
 
 void jack_close (connection_data_t *pp);
 
+void set_filters(connection_data_t *pp, double **irs, int filter_len);
+
+
 /* variable setters */
 void set_global_gain(connection_data_t *pp, float gain);
 void set_gain(connection_data_t *pp, int channel_index, float gain);

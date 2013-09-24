@@ -4,6 +4,7 @@
 #include <assert.h>
 
 #include "alloaudio.h"
+#include "firfilter.h"
 
 struct connection_data {
     jack_client_t *client;
@@ -16,6 +17,10 @@ struct connection_data {
     int mute_all; // 0=no 1=yes
     double master_gain;
     int clipper_on;
+
+    /* output filters */
+    int filters_active;
+    FIRFILTER **filters;
 };
 
 void allocate_ports(connection_data_t *pp, int num_chnls)
@@ -37,6 +42,8 @@ void allocate_ports(connection_data_t *pp, int num_chnls)
     pp->master_gain = 1.0;
     pp->mute_all = 0;
     pp->clipper_on = 1;
+    pp->filters_active = 0;
+    pp->filters = (FIRFILTER **) calloc(num_chnls, sizeof(FIRFILTER *));
 
     for (i = 0; i < num_chnls; i++) {
         char name[32];
@@ -82,12 +89,29 @@ int inprocess (jack_nframes_t nframes, void *arg)
                 jack_port_get_buffer (pp->output_ports[chan], nframes);
         jack_default_audio_sample_t *in =
                 jack_port_get_buffer (pp->input_ports[chan], nframes);
-        for (i = 0; i < nframes; i++) {
-            *out = *in++ * gain;
-            if (pp->clipper_on && *out > gain) {
-                *out = gain;
+        if (pp->filters_active) {
+            double filt_in[nframes];
+            double filt_out[nframes];
+
+            for (i = 0; i < nframes; i++) {
+                filt_in[i] = *in++;
             }
-            out++;
+            firfilter_next(pp->filters[chan],filt_in, filt_out, nframes, gain);
+            for (i = 0; i < nframes; i++) {
+                *out = filt_out[i];
+                if (pp->clipper_on && *out > gain) {
+                    *out = gain;
+                }
+                out++;
+            }
+        } else {
+            for (i = 0; i < nframes; i++) {
+                *out = *in++ * gain;
+                if (pp->clipper_on && *out > gain) {
+                    *out = gain;
+                }
+                out++;
+            }
         }
     }
     return 0;	/* continue */
@@ -119,11 +143,35 @@ connection_data_t *jack_initialize(int num_chnls)
     return pp;
 }
 
+void set_filters(connection_data_t *pp, double **irs, int filter_len)
+{
+    int i;
+    pp->filters_active = 0;
+    if (!irs) { /* if NULL, leave filtering off */
+        return;
+    }
+    /* FIXME: app can crash if filter changes while filtering in the audio callback, for now, make apps wait a bit when changing */
+    for (i = 0; i < pp->num_chnls; i++) {
+        FIRFILTER *new_filter = firfilter_create(irs[i], filter_len);
+        FIRFILTER *old_filter = pp->filters[i];
+        pp->filters[i] = new_filter;
+        if (old_filter) {
+            firfilter_free(old_filter);
+        }
+    }
+
+    pp->filters_active = 1;
+}
+
 void jack_close (connection_data_t *pp)
 {
+    /* FIXME close ports and deallocate filters before clearing memory */
+    free(pp->input_ports);
+    free(pp->output_ports);
+    free(pp->gains);
+    free(pp->filters);
 
-//    if (arg)
-//        free ((connection_data_t *) arg);
+    free(pp);
 }
 
 /* parameter setters */
