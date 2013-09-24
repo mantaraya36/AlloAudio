@@ -47,9 +47,22 @@ int mute_handler(const char *path, const char *types, lo_arg ** argv,
 {
     connection_data_t *pp = (connection_data_t *) user_data;
     /* example showing pulling the argument values out of the argv array */
-    printf("%s <- f:%f\n", path, argv[0]->f);
+    printf("%s <- f:%i\n", path, argv[0]->i);
     fflush(stdout);
 
+    set_mute_all(pp, argv[0]->i);
+    return 0;
+}
+
+int clipper_handler(const char *path, const char *types, lo_arg ** argv,
+                int argc, void *data, void *user_data)
+{
+    connection_data_t *pp = (connection_data_t *) user_data;
+    /* example showing pulling the argument values out of the argv array */
+    printf("%s <- f:%i\n", path, argv[0]->i);
+    fflush(stdout);
+
+    set_clipper_on(pp, argv[0]->i);
     return 0;
 }
 
@@ -83,7 +96,8 @@ oscdata_t *create_osc(const char *port, connection_data_t *pp)
      * to float and int */
     lo_server_thread_add_method(od->st, "/Alloaudio/global_gain", "f", global_gain_handler, pp);
     lo_server_thread_add_method(od->st, "/Alloaudio/gain", "if", gain_handler, pp);
-    lo_server_thread_add_method(od->st, "/Alloaudio/mute", "f", mute_handler, pp);
+    lo_server_thread_add_method(od->st, "/Alloaudio/mute_all", "i", mute_handler, pp);
+    lo_server_thread_add_method(od->st, "/Alloaudio/clipper_on", "i", mute_handler, pp);
 
 
     /* add method that will match any path and args */

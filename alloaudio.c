@@ -15,6 +15,7 @@ struct connection_data {
     double *gains;
     int mute_all; // 0=no 1=yes
     double master_gain;
+    int clipper_on;
 };
 
 void allocate_ports(connection_data_t *pp, int num_chnls)
@@ -35,6 +36,7 @@ void allocate_ports(connection_data_t *pp, int num_chnls)
     pp->gains = (double *) calloc(num_chnls, sizeof(double));
     pp->master_gain = 1.0;
     pp->mute_all = 0;
+    pp->clipper_on = 1;
 
     for (i = 0; i < num_chnls; i++) {
         char name[32];
@@ -81,7 +83,11 @@ int inprocess (jack_nframes_t nframes, void *arg)
         jack_default_audio_sample_t *in =
                 jack_port_get_buffer (pp->input_ports[chan], nframes);
         for (i = 0; i < nframes; i++) {
-            *out++ = *in++ * gain;
+            *out = *in++ * gain;
+            if (pp->clipper_on && *out > gain) {
+                *out = gain;
+            }
+            out++;
         }
     }
     return 0;	/* continue */
@@ -136,3 +142,14 @@ void set_gain(connection_data_t *pp, int channel_index, float gain)
         printf("Alloaudio error: set_gain() for invalid channel %i", channel_index);
     }
 }
+
+void set_mute_all(connection_data_t *pp, int mute_all)
+{
+    pp->mute_all = mute_all;
+}
+
+void set_clipper_on(connection_data_t *pp, int clipper_on)
+{
+    pp->clipper_on = clipper_on;
+}
+
