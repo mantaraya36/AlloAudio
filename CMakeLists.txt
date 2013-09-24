@@ -7,8 +7,11 @@ add_executable(${PROJECT_NAME} ${SRC_LIST})
 target_link_libraries(${PROJECT_NAME} jack)
 include_directories("/usr/include")
 
-
-# jack internal client plugin
-add_library(alloaudio SHARED alloaudio.c)
-target_link_libraries(${PROJECT_NAME} jack lo)
+# Liblo dependency
+target_link_libraries(${PROJECT_NAME} lo)
 include_directories("/usr/include")
+
+#fftw3 dependency
+target_link_libraries(${PROJECT_NAME} fftw3)
+include_directories("/usr/include")
+
