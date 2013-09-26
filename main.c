@@ -14,18 +14,18 @@ int read_irs(const char *filename, double **irs, int *filt_len)
         printf("Error opening file: '%s'.\n", filename);
         return 0;
     }
-    if (fread(&num_chnls, sizeof(int), 1, fp) != 1) {
+    if (fread(&num_chnls, sizeof(int), 1, fp) != sizeof(int)) {
         printf("Error reading num_chanls.");
         return 0;
     }
-    if (fread(filt_len, sizeof(int), 1, fp) != 1) {
+    if (fread(filt_len, sizeof(int), 1, fp) != sizeof(int)) {
         printf("Error reading filt_len.");
         return 0;
     }
     irs = (double **) calloc(num_chnls, sizeof(double *));
     for (chan = 0; chan < num_chnls; chan++) {
         irs[chan] = (double *) calloc(*filt_len, sizeof(double));
-        if(fread(irs[chan], sizeof(double), *filt_len, fp) != *filt_len) {
+        if(fread(irs[chan], sizeof(double), *filt_len, fp) != *filt_len * sizeof(double)) {
             printf("Error wrong ir size %i for ir #%i\n.", *filt_len, chan);
             return 0;
         }
