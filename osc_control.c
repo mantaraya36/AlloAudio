@@ -83,6 +83,12 @@ oscdata_t *create_osc(const char *port, connection_data_t *pp)
     oscdata_t *od = (oscdata_t *) malloc(sizeof(oscdata_t));
     od->st = lo_server_thread_new(port, osc_error);
 
+    if(!od->st) {
+        printf("Error setting up OSC. Is Alloaudio already running?\n");
+        free(od);
+        return 0;
+    }
+
     lo_server_thread_add_method(od->st, "/Alloaudio/global_gain", "f", global_gain_handler, pp);
     lo_server_thread_add_method(od->st, "/Alloaudio/gain", "if", gain_handler, pp);
     lo_server_thread_add_method(od->st, "/Alloaudio/mute_all", "i", mute_handler, pp);
