@@ -2,9 +2,17 @@
 #include <stdio.h>
 #include <memory.h>
 #include <assert.h>
+#include <unistd.h>
 
 #include "alloaudio.h"
 #include "firfilter.h"
+#include "pthread.h"
+
+typedef struct list_member{
+    char *in_port;
+    char* out_port;
+    struct list_member *next;
+} list_member_t;
 
 struct connection_data {
     jack_client_t *client;
@@ -21,6 +29,12 @@ struct connection_data {
     /* output filters */
     int filters_active;
     FIRFILTER **filters;
+
+    /* auto-connection */
+    int cur_port_index;
+    pthread_t conn_thread;
+    pthread_mutex_t conn_list_mutex;
+    list_member_t *conn_list;
 };
 
 void allocate_ports(connection_data_t *pp, int num_chnls)
@@ -44,6 +58,9 @@ void allocate_ports(connection_data_t *pp, int num_chnls)
     pp->clipper_on = 1;
     pp->filters_active = 0;
     pp->filters = (FIRFILTER **) calloc(num_chnls, sizeof(FIRFILTER *));
+    pp->cur_port_index = 0;
+    pthread_mutex_init(&pp->conn_list_mutex, NULL);
+    pp->conn_list = NULL;
 
     for (i = 0; i < num_chnls; i++) {
         char name[32];
@@ -81,7 +98,7 @@ void connect_ports(connection_data_t *pp)
 int inprocess (jack_nframes_t nframes, void *arg)
 {
     int i, chan = 0;
-    connection_data_t *pp = arg;
+    connection_data_t *pp = (connection_data_t *) arg;
     float master_gain = pp->master_gain * (pp->mute_all == 0 ? 1 : 0);
     for (chan = 0; chan < pp->num_chnls; chan++) {
         float gain = master_gain * pp->gains[chan];
@@ -117,6 +134,63 @@ int inprocess (jack_nframes_t nframes, void *arg)
     return 0;	/* continue */
 }
 
+void client_registered(const char* name, int reg, void *arg)
+{
+    connection_data_t *pp = (connection_data_t *) arg;
+    printf("Client registered: %s\n", name);
+    pp->cur_port_index = 0;
+}
+
+void port_registered(jack_port_id_t port_id, int reg, void *arg)
+{
+    connection_data_t *pp = (connection_data_t *) arg;
+    jack_port_t *port = jack_port_by_id(pp->client, port_id);
+
+    int flags = jack_port_flags(port);
+
+    if (flags & JackPortIsOutput && !jack_port_is_mine(pp->client, port)) {
+        const char *out_name = jack_port_name(pp->input_ports[pp->cur_port_index&pp->num_chnls]);
+        const char *in_name = jack_port_name(port);
+        int len_out = strlen(out_name);
+        int len_in = strlen(in_name);
+        list_member_t *conn = (list_member_t *) malloc(sizeof(list_member_t));
+        list_member_t *last = pp->conn_list;
+        while (last->next) {
+            last = last->next;
+        }
+        conn->in_port = (char *) calloc(len_in + 1, sizeof(char));
+        strncpy(conn->in_port, in_name, len_in);
+        conn->out_port = (char *) calloc(len_out + 1, sizeof(char));
+        strncpy(conn->out_port, out_name, len_out);
+        pthread_mutex_lock(&pp->conn_list_mutex);
+        last->next = conn;
+        conn->next = NULL;
+        pthread_mutex_unlock(&pp->conn_list_mutex);
+        pp->cur_port_index++;
+    }
+}
+
+void *connector_thread(void *arg)
+{
+    connection_data_t *pp = (connection_data_t *) arg;
+    while(1) {
+        pthread_mutex_lock(&pp->conn_list_mutex);
+        while (pp->conn_list) {
+            list_member_t *conn = pp->conn_list;
+            pp->conn_list = pp->conn_list->next;
+//            jack_connect(pp->client, conn->in_port, conn->out_port);
+            printf("Connect %s to %s\n", conn->in_port, conn->out_port);
+            free(conn->in_port);
+            free(conn->out_port);
+            free(conn);
+        }
+        pthread_mutex_unlock(&pp->conn_list_mutex);
+        sleep(1);
+    }
+}
+
+
+
 connection_data_t *jack_initialize(int num_chnls)
 {
     jack_client_t *client = jack_client_open("Alloaudio", JackNoStartServer, NULL);
@@ -136,9 +210,13 @@ connection_data_t *jack_initialize(int num_chnls)
     jack_set_process_callback (client, inprocess, pp);
 
     allocate_ports(pp, num_chnls);
-
+    jack_set_client_registration_callback(client, client_registered, pp);
+    jack_set_port_registration_callback(client, port_registered, pp);
     jack_activate (client);
 
+    if (!pthread_create(&pp->conn_thread, NULL, connector_thread, pp)) {
+        printf("Error creating connector thread ports.\n");
+    }
     connect_ports(pp);
     return pp;
 }
@@ -180,7 +258,6 @@ void set_global_gain(connection_data_t *pp, float gain)
 {
     pp->master_gain = gain;
 }
-
 
 void set_gain(connection_data_t *pp, int channel_index, float gain)
 {
