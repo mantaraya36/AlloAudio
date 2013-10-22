@@ -15,3 +15,7 @@ include_directories("/usr/include")
 target_link_libraries(${PROJECT_NAME} fftw3)
 include_directories("/usr/include")
 
+#pthreads dependency
+find_package(Threads)
+target_link_libraries(${PROJECT_NAME} ${CMAKE_THREAD_LIBS_INIT})
+
