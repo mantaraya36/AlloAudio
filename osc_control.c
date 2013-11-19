@@ -58,6 +58,16 @@ int clipper_handler(const char *path, const char *types, lo_arg ** argv,
     return 0;
 }
 
+int room_compensation_handler(const char *path, const char *types, lo_arg ** argv,
+                int argc, void *data, void *user_data)
+{
+    connection_data_t *pp = (connection_data_t *) user_data;
+    printf("%s <- f:%i\n", path, argv[0]->i); fflush(stdout);
+
+    set_room_compensation_on(pp, argv[0]->i);
+    return 0;
+}
+
 /* catch any incoming messages and display them. returning 1 means that the
  * message has not been fully handled and the server should try other methods */
 int generic_handler(const char *path, const char *types, lo_arg ** argv,
@@ -93,6 +103,7 @@ oscdata_t *create_osc(const char *port, connection_data_t *pp)
     lo_server_thread_add_method(od->st, "/Alloaudio/gain", "if", gain_handler, pp);
     lo_server_thread_add_method(od->st, "/Alloaudio/mute_all", "i", mute_handler, pp);
     lo_server_thread_add_method(od->st, "/Alloaudio/clipper_on", "i", mute_handler, pp);
+    lo_server_thread_add_method(od->st, "/Alloaudio/room_compensation_on", "i", room_compensation_handler, pp);
 
     /* add method that will match any path and args */
     lo_server_thread_add_method(od->st, NULL, NULL, generic_handler, NULL);

@@ -25,9 +25,9 @@ struct connection_data {
     int mute_all; // 0=no 1=yes
     double master_gain;
     int clipper_on;
+    int filters_active;
 
     /* output filters */
-    int filters_active;
     FIRFILTER **filters;
 
     /* auto-connection */
@@ -189,8 +189,6 @@ void *connector_thread(void *arg)
     }
 }
 
-
-
 connection_data_t *jack_initialize(int num_chnls)
 {
     jack_client_t *client = jack_client_open("Alloaudio", JackNoStartServer, NULL);
@@ -276,5 +274,10 @@ void set_mute_all(connection_data_t *pp, int mute_all)
 void set_clipper_on(connection_data_t *pp, int clipper_on)
 {
     pp->clipper_on = clipper_on;
+}
+
+void set_room_compensation_on(connection_data_t *pp, int room_compensation_on)
+{
+    pp->filters_active = room_compensation_on;
 }
 
