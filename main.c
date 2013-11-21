@@ -41,7 +41,12 @@ int main(int argc, char *argv[])
     double **irs;
 
     pp = jack_initialize(8);
+
     od = create_osc("7070", pp);
+
+    if (!pp || !od) {
+        return -1;
+    }
 
     if (argc == 2) {
         num_irs = read_irs(argv[1], irs, &filt_len);
@@ -53,7 +58,11 @@ int main(int argc, char *argv[])
         set_filters(pp, irs, filt_len);
     }
 
-    scanf("Enter :%i", &i);
+    printf("Alloaudio started.\n");fflush(stdout);
+    i = 0;
+    while (!i) {
+        scanf("Enter :%i", &i);
+    }
     printf("Alloaudio Closing.\n");
 
     delete_osc(od);

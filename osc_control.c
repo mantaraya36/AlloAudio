@@ -42,7 +42,7 @@ int mute_handler(const char *path, const char *types, lo_arg ** argv,
                 int argc, void *data, void *user_data)
 {
     connection_data_t *pp = (connection_data_t *) user_data;
-    printf("%s <- f:%i\n", path, argv[0]->i); fflush(stdout);
+    printf("%s <- i:%i\n", path, argv[0]->i); fflush(stdout);
 
     set_mute_all(pp, argv[0]->i);
     return 0;
@@ -52,7 +52,7 @@ int clipper_handler(const char *path, const char *types, lo_arg ** argv,
                 int argc, void *data, void *user_data)
 {
     connection_data_t *pp = (connection_data_t *) user_data;
-    printf("%s <- f:%i\n", path, argv[0]->i); fflush(stdout);
+    printf("%s <- i:%i\n", path, argv[0]->i); fflush(stdout);
 
     set_clipper_on(pp, argv[0]->i);
     return 0;
@@ -62,11 +62,46 @@ int room_compensation_handler(const char *path, const char *types, lo_arg ** arg
                 int argc, void *data, void *user_data)
 {
     connection_data_t *pp = (connection_data_t *) user_data;
-    printf("%s <- f:%i\n", path, argv[0]->i); fflush(stdout);
+    printf("%s <- i:%i\n", path, argv[0]->i); fflush(stdout);
 
     set_room_compensation_on(pp, argv[0]->i);
     return 0;
 }
+
+int bass_management_handler(const char *path, const char *types, lo_arg ** argv,
+                int argc, void *data, void *user_data)
+{
+    connection_data_t *pp = (connection_data_t *) user_data;
+    printf("%s <- f:%f\n", path, argv[0]->f); fflush(stdout);
+
+    set_bass_management_freq(pp, argv[0]->f);
+    return 0;
+}
+
+int bass_management_mode_handler(const char *path, const char *types, lo_arg ** argv,
+                int argc, void *data, void *user_data)
+{
+    connection_data_t *pp = (connection_data_t *) user_data;
+    printf("%s <- i:%i\n", path, argv[0]->i); fflush(stdout);
+
+    if (argv[0]->i < 0 || argv[0]->i >= BASSMODE_COUNT) {
+        printf("Invalid bass management mode %i.\n", argv[0]->i); fflush(stdout);
+        return 0;
+    }
+    set_bass_management_mode(pp, argv[0]->i);
+    return 0;
+}
+
+int sw_indeces_handler(const char *path, const char *types, lo_arg ** argv,
+                int argc, void *data, void *user_data)
+{
+    connection_data_t *pp = (connection_data_t *) user_data;
+    printf("%s <- %i %i, %i, %i\n", path, argv[0]->i, argv[1]->i, argv[2]->i, argv[3]->i); fflush(stdout);
+
+    set_sw_indeces(pp, argv[0]->i, argv[1]->i, argv[2]->i, argv[3]->i);
+    return 0;
+}
+
 
 /* catch any incoming messages and display them. returning 1 means that the
  * message has not been fully handled and the server should try other methods */
@@ -104,6 +139,9 @@ oscdata_t *create_osc(const char *port, connection_data_t *pp)
     lo_server_thread_add_method(od->st, "/Alloaudio/mute_all", "i", mute_handler, pp);
     lo_server_thread_add_method(od->st, "/Alloaudio/clipper_on", "i", mute_handler, pp);
     lo_server_thread_add_method(od->st, "/Alloaudio/room_compensation_on", "i", room_compensation_handler, pp);
+    lo_server_thread_add_method(od->st, "/Alloaudio/bass_management_freq", "f", bass_management_handler, pp);
+    lo_server_thread_add_method(od->st, "/Alloaudio/bass_management_mode", "i", bass_management_mode_handler, pp);
+    lo_server_thread_add_method(od->st, "/Alloaudio/sw_indeces", "iiii", sw_indeces_handler, pp);
 
     /* add method that will match any path and args */
     lo_server_thread_add_method(od->st, NULL, NULL, generic_handler, NULL);
