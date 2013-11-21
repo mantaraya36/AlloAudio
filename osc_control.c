@@ -3,12 +3,14 @@
 #include <memory.h>
 #include <lo/lo.h>
 #include <assert.h>
+#include <pthread.h>
 
 #include "osc_control.h"
 
 struct oscdata {
     lo_server_thread st;
     connection_data_t *pp;
+    pthread_t metr_thread;
 };
 
 /* OSC handler functions */
@@ -96,9 +98,19 @@ int sw_indeces_handler(const char *path, const char *types, lo_arg ** argv,
                 int argc, void *data, void *user_data)
 {
     connection_data_t *pp = (connection_data_t *) user_data;
-    printf("%s <- %i %i, %i, %i\n", path, argv[0]->i, argv[1]->i, argv[2]->i, argv[3]->i); fflush(stdout);
+    printf("sw_indeces_handler %s <- %i %i, %i, %i\n", path, argv[0]->i, argv[1]->i, argv[2]->i, argv[3]->i); fflush(stdout);
 
     set_sw_indeces(pp, argv[0]->i, argv[1]->i, argv[2]->i, argv[3]->i);
+    return 0;
+}
+
+int meter_handler(const char *path, const char *types, lo_arg ** argv,
+                int argc, void *data, void *user_data)
+{
+    connection_data_t *pp = (connection_data_t *) user_data;
+    printf("meter_handler %s <- i:%i\n", path, argv[0]->i); fflush(stdout);
+
+    set_meter(pp, argv[0]->i);
     return 0;
 }
 
@@ -122,6 +134,27 @@ int generic_handler(const char *path, const char *types, lo_arg ** argv,
     return 1;
 }
 
+void *meter_thread(void *arg)
+{
+    connection_data_t *pp = (connection_data_t *) arg;
+    int i;
+    int num_chnls = get_num_chnls(pp);
+    float meter_levels[num_chnls];
+    lo_address t = lo_address_new("localhost", "7071");
+    while(!is_closing(pp)) {
+        int bytes_read = get_meter_values(pp, meter_levels);
+        if (bytes_read) {
+            if (bytes_read != num_chnls *sizeof(float)) {
+                printf("Warning. Meter values xrun.\n"); fflush(stdout);
+            }
+        }
+        for (i = 0; i < bytes_read; i++) {
+            lo_send(t, "/Alloaudio/meter", "if", i, meter_levels[i]);
+        }
+        usleep(10000); /* This rate should be significantly faster than the accumulation of meter values in the audio function */
+    }
+}
+
 
 oscdata_t *create_osc(const char *port, connection_data_t *pp)
 {
@@ -134,6 +167,10 @@ oscdata_t *create_osc(const char *port, connection_data_t *pp)
         return 0;
     }
 
+    if (pthread_create(&od->metr_thread, NULL, meter_thread, pp) != 0) {
+        printf("Error creating meter values thread.\n");
+    }
+
     lo_server_thread_add_method(od->st, "/Alloaudio/global_gain", "f", global_gain_handler, pp);
     lo_server_thread_add_method(od->st, "/Alloaudio/gain", "if", gain_handler, pp);
     lo_server_thread_add_method(od->st, "/Alloaudio/mute_all", "i", mute_handler, pp);
@@ -142,6 +179,7 @@ oscdata_t *create_osc(const char *port, connection_data_t *pp)
     lo_server_thread_add_method(od->st, "/Alloaudio/bass_management_freq", "f", bass_management_handler, pp);
     lo_server_thread_add_method(od->st, "/Alloaudio/bass_management_mode", "i", bass_management_mode_handler, pp);
     lo_server_thread_add_method(od->st, "/Alloaudio/sw_indeces", "iiii", sw_indeces_handler, pp);
+    lo_server_thread_add_method(od->st, "/Alloaudio/meter", "i", meter_handler, pp);
 
     /* add method that will match any path and args */
     lo_server_thread_add_method(od->st, NULL, NULL, generic_handler, NULL);
@@ -153,6 +191,7 @@ oscdata_t *create_osc(const char *port, connection_data_t *pp)
 void delete_osc(oscdata_t *od)
 {
     assert(od->st != 0);
+    pthread_join(od->metr_thread, NULL);
     lo_server_thread_free(od->st);
     free(od);
 }

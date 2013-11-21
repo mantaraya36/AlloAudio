@@ -3,11 +3,13 @@
 #include <memory.h>
 #include <assert.h>
 #include <unistd.h>
+#include <math.h>
 
 #include "alloaudio.h"
 #include "firfilter.h"
 #include "butter.h"
 #include "pthread.h"
+#include "jack/ringbuffer.h"
 
 typedef struct list_member{
     char *in_port;
@@ -29,10 +31,17 @@ struct connection_data {
     int filters_active;
     bass_mgmt_mode_t bass_management_mode; /* -1 no management, 0 SW routing without filters, >0 cross-over freq. in Hz. */
     int sw_index[4]; /* support for 4 SW max */
+    int meter_on;
 
     pthread_mutex_t param_mutex;
 
-    /* output filters */
+    /* output data */
+    float *meters;
+    jack_ringbuffer_t *meter_buffer;
+    int meter_counter; /* count samples for level updates */
+    int meter_update_samples; /* number of samples between level updates */
+
+    /* DRC (output) filters */
     FIRFILTER **filters;
 
     /* bass management filters */
@@ -43,13 +52,14 @@ struct connection_data {
     pthread_t conn_thread;
     pthread_mutex_t conn_list_mutex;
     list_member_t *conn_list;
+    int closing; /* to let other threads know they must end */
 };
 
 int chan_is_subwoofer(connection_data_t *pp, int index)
 {
     int i;
     for (i = 0; i < 4; i++) {
-        if (pp->sw_index[i] == index) return 1;
+        if (pp->sw_index[i] == index && pp->bass_management_mode != BASSMODE_NONE) return 1;
     }
     return 0;
 }
@@ -66,28 +76,19 @@ void allocate_ports(connection_data_t *pp, int num_chnls)
         free(pp->output_ports);
         free(pp->gains);
     }
-    pp->num_chnls = 0;
+
     pp->input_ports = (jack_port_t **) calloc(num_chnls, sizeof(jack_port_t *));
     pp->output_ports = (jack_port_t **) calloc(num_chnls, sizeof(jack_port_t *));
     pp->gains = (double *) calloc(num_chnls, sizeof(double));
-    pp->master_gain = 1.0;
-    pp->mute_all = 0;
-    pp->clipper_on = 1;
-    pp->filters_active = 0;
     pp->filters = (FIRFILTER **) calloc(num_chnls, sizeof(FIRFILTER *));
-    pp->cur_port_index = 0;
-    pthread_mutex_init(&pp->conn_list_mutex, NULL);
-    pp->conn_list = NULL;
-
     pp->lopass1 = (BUTTER **) calloc(num_chnls, sizeof(BUTTER *));
     pp->lopass2 = (BUTTER **) calloc(num_chnls, sizeof(BUTTER *));
     pp->hipass1 = (BUTTER **) calloc(num_chnls, sizeof(BUTTER *));
     pp->hipass2 = (BUTTER **) calloc(num_chnls, sizeof(BUTTER *));
-
-    set_bass_management_mode(pp, BASSMODE_FULL);
-    set_bass_management_freq(pp, 150);
+    pp->meters = (float *) calloc(num_chnls, sizeof(float));
     pp->sw_index[0] = num_chnls - 1;
     pp->sw_index[1] =  pp->sw_index[2] = pp->sw_index[3] = -1;
+    pp->meter_update_samples = 1024;
 
     for (i = 0; i < num_chnls; i++) {
         char name[32];
@@ -107,6 +108,29 @@ void allocate_ports(connection_data_t *pp, int num_chnls)
 
     }
     pp->num_chnls = num_chnls;
+}
+
+void initialize_data(connection_data_t *pp, jack_client_t *client)
+{
+    pp->client = client;
+    pp->num_chnls = 0;
+    pp->master_gain = 1.0;
+    pp->mute_all = 0;
+    pp->clipper_on = 1;
+    pp->filters_active = 0;
+    pp->cur_port_index = 0;
+    pthread_mutex_init(&pp->conn_list_mutex, NULL);
+    pp->conn_list = NULL;
+
+    set_bass_management_mode(pp, BASSMODE_FULL);
+    set_bass_management_freq(pp, 150);
+
+    pp->meter_buffer = jack_ringbuffer_create(4096);
+    pp->meter_counter = 0;
+    pp->meter_on = 0;
+    pp->closing = 0;
+
+    pthread_mutex_init(&pp->param_mutex, NULL);
 }
 
 void connect_ports(connection_data_t *pp)
@@ -155,6 +179,8 @@ int inprocess (jack_nframes_t nframes, void *arg)
             in_buf[i] = *in++;
         }
         switch (pp->bass_management_mode) {
+        case BASSMODE_NONE:
+            break;
         case BASSMODE_MIX:
             for (i = 0; i < nframes; i++) {
                 filt_low[i] = in_buf[i];
@@ -183,13 +209,12 @@ int inprocess (jack_nframes_t nframes, void *arg)
                 in_buf[i] = filt_out[i]; /* a bit inefficient to copy here, but makes code simpler below */
             }
             break;
-        case BASSMODE_NONE:
-            break;
         }
         for (i = 0; i < nframes; i++) { /* accumulate SW signal */
             *buf++ += filt_low[i];
         }
-        if (pp->filters_active && !chan_is_subwoofer(pp, chan)) { /* apply DRC filters */
+        if (pp->filters_active
+                && pp->bass_management_mode == BASSMODE_NONE && !chan_is_subwoofer(pp, chan)) { /* apply DRC filters */
             firfilter_next(pp->filters[chan],in_buf, filt_out, nframes, gain);
             for (i = 0; i < nframes; i++) {
                 *out = filt_out[i];
@@ -214,9 +239,28 @@ int inprocess (jack_nframes_t nframes, void *arg)
             if (pp->sw_index[sw] < 0) continue;
             jack_default_audio_sample_t *out =
                     jack_port_get_buffer (pp->output_ports[pp->sw_index[sw]], nframes);
+            memset(out, 0, nframes * sizeof(jack_default_audio_sample_t));
             for (i = 0; i < nframes; i++) {
                 *out++ = bass_buf[i];
             }
+        }
+    }
+    if (pp->meter_on) {
+        for (chan = 0; chan < pp->num_chnls; chan++) {
+            jack_default_audio_sample_t *out =
+                    jack_port_get_buffer (pp->output_ports[chan], nframes);
+            for (i = 0; i < nframes; i++) {
+                if (pp->meters[chan] < *out) {
+                    pp->meters[chan] = *out;
+                }
+                out++;
+            }
+        }
+        pp->meter_counter += nframes;
+        if (pp->meter_counter > pp->meter_update_samples) {
+            jack_ringbuffer_write(pp->meter_buffer, (char *) pp->meters, sizeof(float) * pp->num_chnls);
+            memset(pp->meters, 0, sizeof(float) * pp->num_chnls);
+            pp->meter_counter = 0;
         }
     }
     pthread_mutex_unlock(&pp->param_mutex);
@@ -244,6 +288,9 @@ void port_registered(jack_port_id_t port_id, int reg, void *arg)
 
     int flags = jack_port_flags(port);
 
+    return;
+    //FIXME this is crashing!
+
     if (flags & JackPortIsOutput && !jack_port_is_mine(pp->client, port)) {
         const char *out_name = jack_port_name(pp->input_ports[pp->cur_port_index&pp->num_chnls]);
         const char *in_name = jack_port_name(port);
@@ -269,7 +316,7 @@ void port_registered(jack_port_id_t port_id, int reg, void *arg)
 void *connector_thread(void *arg)
 {
     connection_data_t *pp = (connection_data_t *) arg;
-    while(1) {
+    while(!pp->closing) {
         pthread_mutex_lock(&pp->conn_list_mutex);
         while (pp->conn_list) {
             list_member_t *conn = pp->conn_list;
@@ -299,19 +346,17 @@ connection_data_t *jack_initialize(int num_chnls)
         printf("Error allocating internal data.\n");
         return 0;	/* heap exhausted */
     }
-    /* init connection data structure */
-    pp->client = client;
-    pthread_mutex_init(&pp->param_mutex, NULL);
-
-    jack_set_process_callback (client, inprocess, pp);
+    initialize_data(pp, client);
 
     allocate_ports(pp, num_chnls);
+
+    jack_set_process_callback (client, inprocess, pp);
     jack_set_client_registration_callback(client, client_registered, pp);
     jack_set_port_registration_callback(client, port_registered, pp);
     jack_set_sample_rate_callback(client, sr_changed, NULL);
     jack_activate (client);
 
-    if (!pthread_create(&pp->conn_thread, NULL, connector_thread, pp)) {
+    if (pthread_create(&pp->conn_thread, NULL, connector_thread, pp) != 0) {
         printf("Error creating connector thread ports.\n");
     }
     connect_ports(pp);
@@ -325,7 +370,6 @@ void set_filters(connection_data_t *pp, double **irs, int filter_len)
     if (!irs) { /* if NULL, leave filtering off */
         return;
     }
-    /* FIXME: app can crash if filter changes while filtering in the audio callback, for now, make apps wait a bit when changing */
     for (i = 0; i < pp->num_chnls; i++) {
         FIRFILTER *new_filter = firfilter_create(irs[i], filter_len);
         FIRFILTER *old_filter = pp->filters[i];
@@ -341,6 +385,8 @@ void set_filters(connection_data_t *pp, double **irs, int filter_len)
 void jack_close (connection_data_t *pp)
 {
     int i;
+    pthread_join(pp->conn_thread, NULL);
+
     /* FIXME close ports and deallocate filters before clearing memory */
     for (i = 0; i < pp->num_chnls; i++) {
         butter_free(pp->lopass1[i]);
@@ -356,6 +402,8 @@ void jack_close (connection_data_t *pp)
     free(pp->output_ports);
     free(pp->gains);
     free(pp->filters);
+    free(pp->meters);
+    jack_ringbuffer_free(pp->meter_buffer);
 
     free(pp);
 }
@@ -434,4 +482,30 @@ void set_sw_indeces(connection_data_t *pp, int i1, int i2, int i3, int i4)
     pp->sw_index[3] = i1;
     pthread_mutex_unlock(&pp->param_mutex);
 
+}
+
+
+void set_meter(connection_data_t *pp, int meter_on)
+{
+    pthread_mutex_lock(&pp->param_mutex);
+    pp->meter_on = meter_on;
+    pthread_mutex_unlock(&pp->param_mutex);
+}
+
+
+int get_meter_values(connection_data_t *pp, float *values)
+{
+    return jack_ringbuffer_read(pp->meter_buffer, (char *) values, pp->num_chnls * sizeof(float));
+}
+
+
+int get_num_chnls(connection_data_t *pp)
+{
+    return pp->num_chnls;
+}
+
+
+int is_closing(connection_data_t *pp)
+{
+    return pp->closing;
 }
