@@ -11,8 +11,6 @@ autoconnector_t *create_autoconnect(jack_data_t *jd);
 void join_autoconnect(autoconnector_t *ac);
 void destroy_autoconnect(autoconnector_t *ac);
 
-/* jack callbacks */
-//void client_registered(const char* name, int reg, void *arg);
-//void port_registered(jack_port_id_t port_id, int reg, void *arg);
+void connect_output_ports(autoconnector_t *ac);
 
 #endif // AUTOCONNECTOR_H

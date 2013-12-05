@@ -275,6 +275,8 @@ alloaudio_data_t *create_alloaudio(int num_chnls)
     jack_set_sample_rate_callback(client, sr_changed, NULL);
     jack_activate (client);
 
+    connect_output_ports(pp->ac);
+
     return pp;
 }
 

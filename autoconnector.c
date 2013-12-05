@@ -76,10 +76,10 @@ void port_registered(jack_port_id_t port_id, int reg, void *arg)
         conn->out_port = (char *) calloc(len_out + 1, sizeof(char));
         strncpy(conn->out_port, out_name, len_out);
         conn->next = NULL;
-        if (last) {
+        if (ac->conn_list) {
             last->next = conn;
         } else {
-            last = conn;
+            ac->conn_list = conn;
         }
         ac->cur_port_index++;
         pthread_mutex_unlock(&ac->conn_list_mutex);
@@ -87,21 +87,17 @@ void port_registered(jack_port_id_t port_id, int reg, void *arg)
 }
 
 
-void connect_ports(alloaudio_data_t *pp)
+void connect_output_ports(autoconnector_t *ac)
 {
-    //    /* try to connect to the first physical input & output ports */
-
-    //    if (jack_connect (client, "system:playback_1",
-    //                      jack_port_name (pp->input_ports))) {
-    //        fprintf (stderr, "cannot connect input port\n");
-    //        return 1;	/* terminate client */
-    //    }
-
-    //    if (jack_connect (client, jack_port_name (pp->output_ports),
-    //                      "system:playback_1")) {
-    //        fprintf (stderr, "cannot connect output port\n");
-    //        return 1;	/* terminate client */
-    //    }
+    int i;
+    for (i = 0; i < ac->jd->num_chnls; i++) {
+        char system_port[64];
+        const char *portname = jack_port_name (ac->jd->output_ports[i]);
+        sprintf(system_port, "system:playback_%i", i + 1);
+        if (jack_connect (ac->jd->client, portname, system_port)) {
+            fprintf (stderr, "cannot connect %s to %s\n", portname, system_port); fflush(stdout);
+        }
+    }
 }
 
 
