@@ -1,3 +1,5 @@
+#ifndef BUTTER_H
+#define BUTTER_H
 
 typedef struct BUTTER_ BUTTER;
 
@@ -13,3 +15,5 @@ void butter_free(BUTTER *b);
 
 /* not thread safe, must be protected by caller */
 void butter_set_fc(BUTTER *b, double fc);
+
+#endif // BUTTER_H

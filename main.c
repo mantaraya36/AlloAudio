@@ -35,14 +35,14 @@ int read_irs(const char *filename, double **irs, int *filt_len)
 
 int main(int argc, char *argv[])
 {
-    connection_data_t *pp;
+    alloaudio_data_t *pp;
     oscdata_t *od;
     int i, filt_len, num_irs;
     double **irs;
 
-    pp = jack_initialize(8);
+    pp = create_alloaudio(8);
 
-    od = create_osc("7070", pp);
+    od = create_osc("8082", "8083", pp);
 
     if (!pp || !od) {
         return -1;
@@ -66,7 +66,7 @@ int main(int argc, char *argv[])
     printf("Alloaudio Closing.\n");
 
     delete_osc(od);
-    jack_close(pp);
+    free_alloaudio(pp);
     return 0;
 }
 
