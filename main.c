@@ -41,12 +41,10 @@ int main(int argc, char *argv[])
     double **irs;
 
     pp = create_alloaudio(8);
+    if (!pp) return -1;
 
     od = create_osc("8082", "8083", pp);
-
-    if (!pp || !od) {
-        return -1;
-    }
+    if (!od) return -1;
 
     if (argc == 2) {
         num_irs = read_irs(argv[1], irs, &filt_len);

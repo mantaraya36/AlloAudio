@@ -257,11 +257,11 @@ alloaudio_data_t *create_alloaudio(int num_chnls)
 
     if (!client) {
         printf("Error creating jack client.\n");
-        return 0;
+        return NULL;
     }
     if (pp == NULL) {
         printf("Error allocating internal data.\n");
-        return 0;	/* heap exhausted */
+        return NULL;	/* heap exhausted */
     }
     pp = (alloaudio_data_t *) malloc (sizeof (alloaudio_data_t));
     pp->jd = (jack_data_t *) malloc(sizeof(jack_data_t));
@@ -273,7 +273,10 @@ alloaudio_data_t *create_alloaudio(int num_chnls)
 
     jack_set_process_callback (client, inprocess, pp);
     jack_set_sample_rate_callback(client, sr_changed, NULL);
-    jack_activate (client);
+    if (jack_activate (client)) {
+        free_alloaudio(pp);
+        return NULL;
+    };
 
     connect_output_ports(pp->ac);
 
