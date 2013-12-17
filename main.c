@@ -33,14 +33,29 @@ int read_irs(const char *filename, double **irs, int *filt_len)
     return num_chnls;
 }
 
+void print_usage()
+{
+    printf("Usage:\n");
+    printf("alloaudiocontrol numchnls\n");
+}
+
 int main(int argc, char *argv[])
 {
     alloaudio_data_t *pp;
     oscdata_t *od;
     int i, filt_len, num_irs;
     double **irs;
+    int numchnls = 8;
 
-    pp = create_alloaudio(8);
+    if (argc > 1) {
+        numchnls = atoi(argv[1]);
+        if (numchnls < 1 || numchnls > 128) {
+            printf("Error: wrong number of channels: %i\n", numchnls);
+            print_usage();
+            return -1;
+        }
+    }
+    pp = create_alloaudio(numchnls);
     if (!pp) return -1;
 
     od = create_osc("8082", "8083", pp);
@@ -52,8 +67,10 @@ int main(int argc, char *argv[])
         num_irs = read_irs("irs.dat", irs, &filt_len);
     }
 
-    if (num_irs) {
+    if (num_irs == numchnls) {
         set_filters(pp, irs, filt_len);
+    } else {
+        printf("Could not set filters.\n");
     }
 
     printf("Alloaudio started.\n");fflush(stdout);
