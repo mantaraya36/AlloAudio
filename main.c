@@ -36,7 +36,7 @@ int read_irs(const char *filename, double **irs, int *filt_len)
 void print_usage()
 {
     printf("Usage:\n");
-    printf("alloaudiocontrol numchnls\n");
+    printf("alloaudiocontrol [numchnls ir.dat]\n");
 }
 
 int main(int argc, char *argv[])
@@ -61,8 +61,8 @@ int main(int argc, char *argv[])
     od = create_osc("8082", "8083", pp);
     if (!od) return -1;
 
-    if (argc == 2) {
-        num_irs = read_irs(argv[1], irs, &filt_len);
+    if (argc > 2) {
+        num_irs = read_irs(argv[2], irs, &filt_len);
     } else {
         num_irs = read_irs("irs.dat", irs, &filt_len);
     }
