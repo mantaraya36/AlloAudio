@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <pthread.h>
 #include <math.h>
+#include <unistd.h>
 
 #include "osc_control.h"
 
@@ -162,6 +163,7 @@ void *meter_thread(void *arg)
         }
         usleep(10000); /* This rate should be significantly faster than the accumulation of meter values in the audio function */
     }
+    return NULL;
 }
 
 

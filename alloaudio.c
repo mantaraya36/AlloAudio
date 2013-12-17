@@ -183,6 +183,8 @@ int inprocess (jack_nframes_t nframes, void *arg)
                 in_buf[i] = filt_out[i]; /* a bit inefficient to copy here, but makes code simpler below */
             }
             break;
+	default:
+	    break;
         }
         for (i = 0; i < nframes; i++) { /* accumulate SW signal */
             *buf++ += filt_low[i];

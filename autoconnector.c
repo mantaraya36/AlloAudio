@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <pthread.h>
 
@@ -38,6 +39,7 @@ void *connector_thread(void *arg)
         pthread_mutex_unlock(&ac->conn_list_mutex);
         sleep(1);
     }
+    return NULL;
 }
 
 void client_registered(const char* name, int reg, void *arg)
