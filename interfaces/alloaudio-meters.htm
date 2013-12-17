@@ -15,7 +15,9 @@ d = new Interface.Button({
 multiSlider = new Interface.MultiSlider({
     count:numchnls,
     bounds:[0,0,1, 0.93],
-    target:"OSC", key:'/Alloaudio/meter'
+    min: -60,
+    max: 0,
+    target:"OSC", key:'/Alloaudio/meterdb'
 })
 panel.add( multiSlider, d);
 
