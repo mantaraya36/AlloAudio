@@ -79,7 +79,7 @@ void allocate_ports(alloaudio_data_t *pp, int num_chnls)
     pp->meters = (float *) calloc(num_chnls, sizeof(float));
     pp->sw_index[0] = num_chnls - 1;
     pp->sw_index[1] =  pp->sw_index[2] = pp->sw_index[3] = -1;
-    pp->meter_update_samples = 1024;
+    pp->meter_update_samples = 4410;
 
     for (i = 0; i < num_chnls; i++) {
         char name[32];

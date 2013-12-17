@@ -152,8 +152,8 @@ void *meter_thread(void *arg)
                 printf("Warning. Meter values xrun.\n"); fflush(stdout);
             }
         }
-        for (i = 0; i < bytes_read; i++) {
-            char addr[64];
+        for (i = 0; i < bytes_read/sizeof(float); i++) {
+//            char addr[64];
 //            sprintf(addr,"/Alloaudio/meter%i", i);
             lo_send(t, "/Alloaudio/meter", "if", i, meter_levels[i]);
 //            lo_send(t, "/Alloaudio/meter", "if", i, 20.0 * log10(meter_levels[i]));
